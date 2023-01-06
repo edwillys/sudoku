@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
     QMenuBar, QAction
 import sys
 from functools import partial
+import numpy as np
 
 
 class SudokuInsertNumberMenu(QMenu):
@@ -33,15 +34,25 @@ class SudokuInsertNumberMenu(QMenu):
 
 
 class SudokuWidget(QWidget):
-    def __init__(self, parent, dimension=3):
+    def __init__(self, parent, dimension: int = 3):
         super().__init__(parent)
+        self.setMinimumSize(400, 400)
+        self.puzzle = self.generate(dimension)
+        self.solution = self.solve()
         self.mainLayout = QBoxLayout(QBoxLayout.LeftToRight, self)
-
-        self.sudoku = SudokuGrid(dimension)
+        self.grid = SquareBtnGrid(self.puzzle)
         self.mainLayout.addItem(QSpacerItem(0, 0))
-        self.mainLayout.addWidget(self.sudoku)
+        self.mainLayout.addWidget(self.grid)
         self.mainLayout.addItem(QSpacerItem(0, 0))
         self.setLayout(self.mainLayout)
+
+    def setVals(self, vals, disable: bool):
+        self.grid.setVals(vals, disable)
+
+    def setDimension(self, dimension: int):
+        self.puzzle = self.generate(dimension)
+        self.solution = self.solve()
+        self.setVals(self.puzzle, True)
 
     def resizeEvent(self, a0: QtGui.QResizeEvent) -> None:
         w = a0.size().width()
@@ -58,64 +69,161 @@ class SudokuWidget(QWidget):
         self.mainLayout.setStretch(1, int(widget_stretch))
         self.mainLayout.setStretch(2, int(outer_stretch))
 
+    def reset(self):
+        self.grid.reset(self.puzzle)
 
-class SudokuGrid(QWidget):
-    def __init__(self, dimension=3, *args, **kwargs):
+    def showSolution(self):
+        self.setVals(self.solution, False)
+
+    def check(self):
+        vals = self.grid.getVals()
+        inds_wrong = np.argwhere((vals != self.solution) & (vals > 0))
+        inds_right = np.argwhere((vals == self.solution) & (self.puzzle < 0))
+        self.grid.setBtnStylesheetAt(inds_wrong, "background-color: red")
+        self.grid.setBtnStylesheetAt(inds_right, "background-color: green")
+
+    def uncheck(self):
+        inds = np.argwhere(self.puzzle < 0)
+        self.grid.setBtnStylesheetAt(inds, "")
+
+    def solve(self):
+        if len(self.puzzle) == 9:
+            solution = [
+                [8, 6, 4, 3, 7, 1, 2, 5, 9],
+                [3, 2, 5, 8, 4, 9, 7, 6, 1],
+                [9, 7, 1, 2, 6, 5, 8, 4, 3],
+                [4, 3, 6, 1, 9, 2, 5, 8, 7],
+                [1, 9, 8, 6, 5, 7, 4, 3, 2],
+                [2, 5, 7, 4, 8, 3, 9, 1, 6],
+                [6, 8, 9, 7, 3, 4, 1, 2, 5],
+                [7, 1, 3, 5, 2, 8, 6, 9, 4],
+                [5, 4, 2, 9, 1, 6, 3, 7, 8]
+            ]
+        else:
+            solution = [
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            ]
+        return np.array(solution)
+
+    def generate(self, dimension: int):
+        vals = []
+        if dimension == 3:
+            vals = [
+                [-1, -1, 4, 3, -1, -1, 2, -1, 9],
+                [-1, -1, 5, -1, -1, 9, -1, -1, 1],
+                [-1, 7, -1, -1, 6, -1, -1, 4, 3],
+                [-1, -1, 6, -1, -1, 2, -1, 8, 7],
+                [1, 9, -1, -1, -1, 7, 4, -1, -1],
+                [-1, 5, -1, -1, 8, 3, -1, -1, -1],
+                [6, -1, -1, -1, -1, -1, 1, -1, 5],
+                [-1, -1, 3, 5, -1, 8, 6, 9, -1],
+                [-1, 4, 2, 9, 1, -1, 3, -1, -1],
+            ]
+        elif dimension == 4:
+            vals = [
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+                [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            ]
+        return np.array(vals)
+
+
+class SquareBtnGrid(QWidget):
+    def __init__(self, vals: list[list[int]], *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setMinimumSize(400, 400)
-        self.dimension = dimension
-        self.cols = dimension * dimension
-        self.rows = dimension * dimension
-
-        self.sudoku_elements = [
-            [0, 0, 4, 3, 0, 0, 2, 0, 9],
-            [0, 0, 5, 0, 0, 9, 0, 0, 1],
-            [0, 7, 0, 0, 6, 0, 0, 4, 3],
-            [0, 0, 6, 0, 0, 2, 0, 8, 7],
-            [1, 9, 0, 0, 0, 7, 4, 0, 0],
-            [0, 5, 0, 0, 8, 3, 0, 0, 0],
-            [6, 0, 0, 0, 0, 0, 1, 0, 5],
-            [0, 0, 3, 5, 0, 8, 6, 9, 0],
-            [0, 4, 2, 9, 1, 0, 3, 0, 0],
-        ]
-
+        self.spacing = 2
         self.gridLayout = QGridLayout()
-        self.buttons = [
-            [QPushButton() for _ in range(self.cols)]
-            for _ in range(self.rows)
-        ]
-
-        for btn_row in self.buttons:
-            for btn in btn_row:
-                btn.clicked.connect(partial(self.onBtnClicked, btn))
-
-        for row in range(self.rows):
-            for col in range(self.cols):
-                btn = self.buttons[row][col]
-                val = self.sudoku_elements[row][col]
-                # get the buttons to stretch both horizontally and vertically
-                size_policy = QSizePolicy(
-                    QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-                size_policy.setVerticalStretch(1)
-                size_policy.setHorizontalStretch(1)
-                btn.setSizePolicy(size_policy)
-                btn.setFont(QFont("Courrier New", 15))
-                # set initial empty text for place holder, so that the resizing doesn't get messed up
-                if val > 0:
-                    btn.setText(str(val))
-                    btn.setEnabled(False)
-                else:
-                    btn.setText(" ")
-
-                self.gridLayout.addWidget(btn, row, col)
-
-        self.spacing = 5
+        self.setVals(vals, True)
         self.gridLayout.setSpacing(self.spacing)
         self.setLayout(self.gridLayout)
 
+    def getVals(self) -> list[list[int]]:
+        vals = np.array([
+            [-1 for _ in range(self.cols)]
+            for _ in range(self.rows)
+        ])
+        for row, btn_row in enumerate(self.buttons):
+            for col, btn in enumerate(btn_row):
+                try:
+                    vals[row][col] = int(btn.text())
+                except:
+                    pass
+
+        return vals
+
+    def setBtnStylesheetAt(self, positions, stylesheet: str):
+        for row, col in positions:
+            self.buttons[row][col].setStyleSheet(stylesheet)
+
+    def setVals(self, vals: list[list[int]], disable: bool):
+        new_count = len(vals) ** 2
+        cur_count = self.gridLayout.count()
+
+        if new_count != cur_count:
+            for i in reversed(range(self.gridLayout.count())):
+                self.gridLayout.itemAt(i).widget().setParent(None)
+            self.dimension = int(np.sqrt(len(vals)))
+            self.cols = self.dimension ** 2
+            self.rows = self.cols
+
+            self.buttons = [
+                [QPushButton() for _ in range(self.cols)]
+                for _ in range(self.rows)
+            ]
+
+            for row, btn_row in enumerate(self.buttons):
+                for col, btn in enumerate(btn_row):
+                    btn.clicked.connect(partial(self.onBtnClicked, btn))
+                    # get the buttons to stretch both horizontally and vertically
+                    size_policy = QSizePolicy(
+                        QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+                    size_policy.setVerticalStretch(1)
+                    size_policy.setHorizontalStretch(1)
+                    btn.setSizePolicy(size_policy)
+                    btn.setFont(QFont("Courrier New", 15))
+                    self.gridLayout.addWidget(btn, row, col)
+
+        for row, btn_row in enumerate(self.buttons):
+            for col, btn in enumerate(btn_row):
+                val = vals[row][col]
+                # set initial empty text for place holder, so that the resizing doesn't get messed up
+                if val > 0:
+                    btn.setText(str(val))
+                    btn.setEnabled(not disable)
+                else:
+                    btn.setText(" ")
+
     @ pyqtSlot()
     def onBtnClicked(self, item: QPushButton):
-        menu = SudokuInsertNumberMenu(item)
+        menu = SudokuInsertNumberMenu(item, dimension=self.dimension)
         menu.move(QCursor.pos())
         menu.show()
 
@@ -135,7 +243,7 @@ class SudokuGrid(QWidget):
         qp.drawRect(x_left, y_top, x_right - x_left, y_bottom - y_top)
 
         for ind in range(self.rows - 1):
-            if (ind % self.dimension) == 2:
+            if (ind % self.dimension) == (self.dimension - 1):
                 qp.setPen(pen_bold_line)
             else:
                 qp.setPen(pen_normal_line)
@@ -147,7 +255,7 @@ class SudokuGrid(QWidget):
             qp.drawLine(qline)
 
         for ind in range(self.cols - 1):
-            if (ind % self.dimension) == 2:
+            if (ind % self.dimension) == (self.dimension - 1):
                 qp.setPen(pen_bold_line)
             else:
                 qp.setPen(pen_normal_line)
@@ -158,59 +266,13 @@ class SudokuGrid(QWidget):
             qline = QLineF(x_middle, y_top, x_middle, y_bottom)
             qp.drawLine(qline)
 
-        return
-        width = self.squareSize * self.cols
-        height = self.squareSize * self.rows
-        # center the grid
-        left = (self.width() - width) / 2
-        top = (self.height() - height) / 2
-        y = top
-        # we need to add 1 to draw the topmost right/bottom lines too
-        for ind in range(self.rows + 1):
-            if (ind % self.dimension) == 0:
-                qp.setPen(pen_bold_line)
-            else:
-                qp.setPen(pen_normal_line)
-            qline = QLineF(left, y, left + width, y)
-            qp.drawLine(qline)
-            y += self.squareSize
-        x = left
-        for ind in range(self.cols + 1):
-            if (ind % self.dimension) == 0:
-                qp.setPen(pen_bold_line)
-            else:
-                qp.setPen(pen_normal_line)
-            qp.drawLine(QLineF(x, top, x, top + height))
-            x += self.squareSize
-
-        # set "normal" pen back again
-        qp.setPen(pen_normal_line)
-
-        # create a smaller rectangle
-        objectSize = self.squareSize * .8
-        margin = self.squareSize * .1
-        objectRect = QRectF(margin, margin, objectSize, objectSize)
-
-        qp.setBrush(Qt.blue)
-        font = QFont("Courrier New")
-        font.setPixelSize(int(self.squareSize / 2))
-        qp.setFont(font)
-        center_offset = self.squareSize / 2 - font.pixelSize() / 2
-        for row, row_list in enumerate(self.sudoku_elements):
-            for col, el in enumerate(row_list):
-                qp.drawText(objectRect.translated(
-                    left + col * self.squareSize + center_offset,
-                    top + row * self.squareSize + center_offset / 2),
-                    str(el)
-                )
-
-    def reset(self):
+    def reset(self, vals: list[list[int]]):
         for row in range(self.rows):
             for col in range(self.cols):
                 btn = self.buttons[row][col]
-                val = self.sudoku_elements[row][col]
+                val = vals[row][col]
                 # set initial empty text for place holder, so that the resizing doesn't get messed up
-                if val == 0:
+                if val < 0:
                     btn.setText(" ")
 
 
@@ -218,30 +280,30 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        dimension = 3
+        self.dimension = 3
 
         layout = QVBoxLayout()
         buttons_layout = QHBoxLayout()
 
-        generate_button = QPushButton('New')
-        solve_button = QPushButton('Solve')
-        reset_button = QPushButton('Reset')
-
-        generate_button.clicked.connect(self.onGenerate)
-        solve_button.clicked.connect(self.onSolve)
-        reset_button.clicked.connect(self.onReset)
-
-        buttons_layout.addWidget(generate_button)
-        buttons_layout.addWidget(solve_button)
-        buttons_layout.addWidget(reset_button)
-
-        self.sudoku_widget = SudokuWidget(self, dimension)
+        self.sudoku_widget = SudokuWidget(self, self.dimension)
         layout.addWidget(self.sudoku_widget)
         layout.addLayout(buttons_layout)
         widget = QWidget()
         widget.setLayout(layout)
         self.setCentralWidget(widget)
         self.setWindowTitle("Sudoku")
+
+        generate_button = QPushButton('New')
+        solve_button = QPushButton('Solve')
+        reset_button = QPushButton('Reset')
+
+        generate_button.clicked.connect(self.onGenerate)
+        solve_button.clicked.connect(self.sudoku_widget.showSolution)
+        reset_button.clicked.connect(self.onReset)
+
+        buttons_layout.addWidget(generate_button)
+        buttons_layout.addWidget(solve_button)
+        buttons_layout.addWidget(reset_button)
 
         menubar = QMenuBar()
 
@@ -250,11 +312,18 @@ class MainWindow(QMainWindow):
         action_file_new.triggered.connect(self.onGenerate)
         menu_file.addAction(action_file_new)
         action_file_solve = QAction("Solve", self, shortcut="Ctrl+E")
-        action_file_solve.triggered.connect(self.onSolve)
+        action_file_solve.triggered.connect(partial(self.sudoku_widget.showSolution))
         menu_file.addAction(action_file_solve)
         action_file_reset = QAction("Reset", self, shortcut="Ctrl+R")
         action_file_reset.triggered.connect(self.onReset)
         menu_file.addAction(action_file_reset)
+        action_file_check = QAction("Check", self, shortcut="Ctrl+H")
+        action_file_check.triggered.connect(partial(self.sudoku_widget.check))
+        menu_file.addAction(action_file_check)
+        action_file_ucheck = QAction("Uncheck", self, shortcut="Ctrl+U")
+        action_file_ucheck.triggered.connect(
+            partial(self.sudoku_widget.uncheck))
+        menu_file.addAction(action_file_ucheck)
         menubar.addMenu(menu_file)
 
         menu_option = menubar.addMenu("Option")
@@ -271,18 +340,14 @@ class MainWindow(QMainWindow):
         for k, v in self.action_dimensions.items():
             v.triggered.connect(partial(self.onDimension, k))
             menu_option_dimension.addAction(v)
-        self.action_dimensions[dimension].setChecked(True)
+        self.action_dimensions[self.dimension].setChecked(True)
         menubar.addMenu(menu_option)
 
         self.setMenuBar(menubar)
 
     @pyqtSlot()
     def onReset(self):
-        self.sudoku_widget.sudoku.reset()
-
-    @pyqtSlot()
-    def onSolve(self):
-        pass
+        self.sudoku_widget.reset()
 
     @pyqtSlot()
     def onGenerate(self):
@@ -290,8 +355,11 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def onDimension(self, dimension: int):
-        for k, v in self.action_dimensions.items():
-            v.setChecked(k == dimension)
+        if dimension != self.dimension:
+            for k, v in self.action_dimensions.items():
+                v.setChecked(k == dimension)
+            self.sudoku_widget.setDimension(dimension)
+            self.dimension = dimension
 
 
 def main():
