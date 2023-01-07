@@ -10,29 +10,6 @@ from functools import partial
 import numpy as np
 
 
-class SudokuInsertNumberMenu(QMenu):
-    def __init__(self, parent: QPushButton, button_size: int = 70, dimension: int = 3, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dimension = dimension
-
-        grid = QGridLayout()
-        self.buttons = [QPushButton(str(i))
-                        for i in range(self.dimension ** 2)]
-
-        for i, btn in enumerate(self.buttons):
-            btn.setFixedSize(QSize(button_size, button_size))
-            grid.addWidget(btn, i // dimension, i % dimension)
-            btn.clicked.connect(partial(self.onBtnClicked, i, parent))
-
-        grid.setSpacing(0)
-        self.setLayout(grid)
-
-    @ pyqtSlot()
-    def onBtnClicked(self, number: int, parent: QPushButton):
-        parent.setText(str(number))
-        self.close()
-
-
 class SudokuWidget(QWidget):
     def __init__(self, parent, dimension: int = 3):
         super().__init__(parent)
@@ -40,11 +17,32 @@ class SudokuWidget(QWidget):
         self.puzzle = self.generate(dimension)
         self.solution = self.solve()
         self.mainLayout = QBoxLayout(QBoxLayout.LeftToRight, self)
-        self.grid = SquareBtnGrid(self.puzzle)
+        self.grid = SquareBtnGrid(self)
         self.mainLayout.addItem(QSpacerItem(0, 0))
         self.mainLayout.addWidget(self.grid)
         self.mainLayout.addItem(QSpacerItem(0, 0))
         self.setLayout(self.mainLayout)
+
+        self.check_en = True
+        self.tips_en = False
+
+    def updateTips(self):
+        if self.tips_en:
+            tips = self.getTips()
+            # don't show tips for the elements that already contain right answers or the ones from the puzzle
+            vals = self.grid.getVals()
+            inds_right = np.argwhere(vals == self.solution)
+            for ind in inds_right:
+                # https://numpy.org/doc/stable/user/quickstart.html#indexing-with-arrays-of-indices
+                tips[tuple(ind)] = set()
+            self.grid.updateToolTips(tips)
+
+    def showTips(self, show: bool):
+        self.tips_en = show
+        if show:
+            self.updateTips()
+        else:
+            self.grid.updateToolTips([])
 
     def setVals(self, vals, disable: bool):
         self.grid.setVals(vals, disable)
@@ -75,16 +73,46 @@ class SudokuWidget(QWidget):
     def showSolution(self):
         self.setVals(self.solution, False)
 
-    def check(self):
-        vals = self.grid.getVals()
-        inds_wrong = np.argwhere((vals != self.solution) & (vals > 0))
-        inds_right = np.argwhere((vals == self.solution) & (self.puzzle < 0))
-        self.grid.setBtnStylesheetAt(inds_wrong, "background-color: red")
-        self.grid.setBtnStylesheetAt(inds_right, "background-color: green")
+    def updateCheck(self):
+        if self.check_en:
+            vals = self.grid.getVals()
+            inds_wrong = np.argwhere((vals != self.solution) & (vals > 0))
+            inds_right = np.argwhere((vals == self.solution) & (self.puzzle < 0))
+            self.grid.setBtnStylesheetAt(inds_wrong, "background-color: red")
+            self.grid.setBtnStylesheetAt(inds_right, "background-color: green")
 
-    def uncheck(self):
-        inds = np.argwhere(self.puzzle < 0)
-        self.grid.setBtnStylesheetAt(inds, "")
+    def check(self, enable: bool):
+        self.check_en = enable
+        if enable:
+            self.updateCheck()
+        else:
+            inds = np.argwhere(self.puzzle < 0)
+            self.grid.setBtnStylesheetAt(inds, "")
+
+    def getTips(self):
+        tips = []
+        if len(self.puzzle) == 9:
+            tips = np.array([
+                [set([1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+                [set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set(
+                    [0, 1]), set([0, 1]), set([0, 1]), set([0, 1]), set([0, 1])],
+            ])
+        return tips
 
     def solve(self):
         if len(self.puzzle) == 9:
@@ -155,13 +183,38 @@ class SudokuWidget(QWidget):
             ]
         return np.array(vals)
 
+class SudokuInsertNumberMenu(QMenu):
+    def __init__(self, parent: QPushButton, sudoku: SudokuWidget, button_size: int = 50, dimension: int = 3, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dimension = dimension
+        self.sudoku = sudoku
+
+        grid = QGridLayout()
+        self.buttons = [QPushButton(str(i))
+                        for i in range(self.dimension ** 2)]
+
+        for i, btn in enumerate(self.buttons):
+            btn.setFixedSize(QSize(button_size, button_size))
+            grid.addWidget(btn, i // dimension, i % dimension)
+            btn.clicked.connect(partial(self.onBtnClicked, i, parent))
+
+        grid.setSpacing(0)
+        self.setLayout(grid)
+
+    @ pyqtSlot()
+    def onBtnClicked(self, number: int, parent: QPushButton):
+        parent.setText(str(number))
+        self.sudoku.updateCheck()
+        self.sudoku.updateTips()
+        self.close()
 
 class SquareBtnGrid(QWidget):
-    def __init__(self, vals: list[list[int]], *args, **kwargs):
+    def __init__(self, sudoku: SudokuWidget, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.sudoku = sudoku
         self.spacing = 2
         self.gridLayout = QGridLayout()
-        self.setVals(vals, True)
+        self.setVals(sudoku.puzzle, True)
         self.gridLayout.setSpacing(self.spacing)
         self.setLayout(self.gridLayout)
 
@@ -223,7 +276,7 @@ class SquareBtnGrid(QWidget):
 
     @ pyqtSlot()
     def onBtnClicked(self, item: QPushButton):
-        menu = SudokuInsertNumberMenu(item, dimension=self.dimension)
+        menu = SudokuInsertNumberMenu(item, self.sudoku, dimension=self.dimension)
         menu.move(QCursor.pos())
         menu.show()
 
@@ -275,6 +328,19 @@ class SquareBtnGrid(QWidget):
                 if val < 0:
                     btn.setText(" ")
 
+    def updateToolTips(self, tips: list):
+        if len(tips) == 0:
+            for btn_row in self.buttons:
+                for btn in btn_row:
+                    btn.setToolTip("")
+        else:
+            for tips_row, btn_row in zip(tips, self.buttons):
+                for tip, btn in zip(tips_row, btn_row):
+                    if len(tip) > 0:
+                        btn.setToolTip(str(tip))
+                    else:
+                        btn.setToolTip("")
+
 
 class MainWindow(QMainWindow):
 
@@ -293,18 +359,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(widget)
         self.setWindowTitle("Sudoku")
 
-        generate_button = QPushButton('New')
-        solve_button = QPushButton('Solve')
-        reset_button = QPushButton('Reset')
-
-        generate_button.clicked.connect(self.onGenerate)
-        solve_button.clicked.connect(self.sudoku_widget.showSolution)
-        reset_button.clicked.connect(self.onReset)
-
-        buttons_layout.addWidget(generate_button)
-        buttons_layout.addWidget(solve_button)
-        buttons_layout.addWidget(reset_button)
-
         menubar = QMenuBar()
 
         menu_file = menubar.addMenu("File")
@@ -312,24 +366,23 @@ class MainWindow(QMainWindow):
         action_file_new.triggered.connect(self.onGenerate)
         menu_file.addAction(action_file_new)
         action_file_solve = QAction("Solve", self, shortcut="Ctrl+E")
-        action_file_solve.triggered.connect(partial(self.sudoku_widget.showSolution))
+        action_file_solve.triggered.connect(
+            partial(self.sudoku_widget.showSolution))
         menu_file.addAction(action_file_solve)
         action_file_reset = QAction("Reset", self, shortcut="Ctrl+R")
-        action_file_reset.triggered.connect(self.onReset)
+        action_file_reset.triggered.connect(partial(self.sudoku_widget.reset))
         menu_file.addAction(action_file_reset)
-        action_file_check = QAction("Check", self, shortcut="Ctrl+H")
-        action_file_check.triggered.connect(partial(self.sudoku_widget.check))
-        menu_file.addAction(action_file_check)
-        action_file_ucheck = QAction("Uncheck", self, shortcut="Ctrl+U")
-        action_file_ucheck.triggered.connect(
-            partial(self.sudoku_widget.uncheck))
-        menu_file.addAction(action_file_ucheck)
         menubar.addMenu(menu_file)
 
         menu_option = menubar.addMenu("Option")
         action_option_tips = QAction(
             "Show Tips", self, shortcut="Ctrl+T", checkable=True)
+        action_option_tips.triggered.connect(self.sudoku_widget.showTips)
         menu_option.addAction(action_option_tips)
+        action_file_check = QAction(
+            "Check", self, shortcut="Ctrl+H", checkable=True, checked=True)
+        action_file_check.triggered.connect(partial(self.sudoku_widget.check))
+        menu_option.addAction(action_file_check)
         menu_option_dimension = menu_option.addMenu("Dimension")
         self.action_dimensions = {
             k: QAction(
@@ -344,10 +397,6 @@ class MainWindow(QMainWindow):
         menubar.addMenu(menu_option)
 
         self.setMenuBar(menubar)
-
-    @pyqtSlot()
-    def onReset(self):
-        self.sudoku_widget.reset()
 
     @pyqtSlot()
     def onGenerate(self):
