@@ -59,7 +59,7 @@ class Sudoku:
         self.n = order * order
         self.n_blocks = order * order
 
-    def get_block_ind(self, row_ind: int, col_ind: int) -> tuple(int, int):
+    def get_block_ind(self, row_ind: int, col_ind: int) -> tuple[int, int]:
         block_ind = (row_ind // self.order) * \
             self.order + col_ind // self.order
         block_el_ind = (row_ind % self.order) * \
@@ -117,6 +117,17 @@ class Sudoku:
             del self.blk_dicts[bl_ind][bl_el_ind]
             del self.row_dicts[row_ind][col_ind]
             del self.col_dicts[col_ind][row_ind]
+
+    def get_vals(self) -> list[list[int]]:
+        retlist = [
+            [-1] * self.n
+        ] * self.n
+
+        for row, row_dict in enumerate(self.row_dicts):
+            for col, val in row_dict.items():
+                retlist[row][col] = val
+
+        return retlist
 
     def generate_elem(self, row_ind: int, col_ind: int) -> bool:
         allowed_vals = self.allowed_vals(row_ind, col_ind)
@@ -215,8 +226,29 @@ class Sudoku:
             self.sanity_checks(self.col_dicts) and \
             self.sanity_checks(self.blk_dicts)
 
-    def solve(self):
-        pass
+    def solve(self) -> bool:
+        # construct matrix of unsolved row, col tuples
+        unsolved_row_col = []
+        for row, row_dict in enumerate(self.row_dicts):
+            for col in range(self.n):
+                if col not in row_dict:
+                    unsolved_row_col += [(row, col)]
+
+        unsolved_row_col_next = list(unsolved_row_col)
+        at_least_one = True
+        while len(unsolved_row_col_next) > 0:
+            at_least_one = False
+            for row, col in unsolved_row_col:
+                allowed_vals = self.allowed_vals(row, col)
+                if len(allowed_vals) == 1:
+                    self.set_val(row, col, allowed_vals[0])
+                    unsolved_row_col.remove((row, col))
+                    at_least_one = True
+            unsolved_row_col_next = list(unsolved_row_col)
+            if not at_least_one:
+                break
+
+        return len(unsolved_row_col_next) == 0
 
 
 if __name__ == "__main__":

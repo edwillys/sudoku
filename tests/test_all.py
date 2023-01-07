@@ -1,5 +1,5 @@
 from src.sudoku import Sudoku
-from dataset import *
+from .dataset import *
 from os import path as osp
 
 def test_grid(n = 3):
@@ -34,10 +34,10 @@ def test_dataset(n_tests = 10):
         fin.readline() # skip header
         for _ in range(n_tests):
             line = fin.readline()
-            line.replace('\n','')
+            line = line.replace('\n','')
             [quiz, solution] = line.split(',')
             sdk_quiz = Sudoku(grid = quiz)
-            sdk_quiz.solve()
+            assert(sdk_quiz.solve())
             sdk_solution = Sudoku(grid = solution)
             assert(sdk_quiz == sdk_solution)
 
