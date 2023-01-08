@@ -123,12 +123,13 @@ class SudokuWidget(QWidget):
         for ind in inds_wrong:
             vals[tuple(ind)] = -1
 
-        puzzle_now = Sudoku(self.order, grid = vals)
+        puzzle_now = Sudoku(self.order, grid=vals)
         tips = [
-            [set(puzzle_now.allowed_vals(row, col)) for col in range(self.order**2)]
+            [set(puzzle_now.allowed_vals(row, col))
+             for col in range(self.order**2)]
             for row in range(self.order**2)
         ]
-        
+
         return np.array(tips)
 
     def generatePuzzle(self, order: int) -> None:
@@ -145,7 +146,7 @@ class SudokuWidget(QWidget):
         self.grid.enableElements(self.puzzle_vals <= 0)
         self.resetCheck()
         # get solution
-        self.solution = Sudoku(order, grid = self.puzzle_vals)
+        self.solution = Sudoku(order, grid=self.puzzle_vals)
         self.solution.solve()
         self.solution_vals = np.array(self.solution.get_vals())
 
@@ -157,7 +158,7 @@ class SudokuInsertNumberMenu(QMenu):
         self.sudoku_widget = sudoku_widget
 
         grid = QGridLayout()
-        self.buttons = [QPushButton(str(i))
+        self.buttons = [QPushButton(str(i + 1))
                         for i in range(self.order ** 2)]
 
         for i, btn in enumerate(self.buttons):
@@ -357,7 +358,8 @@ class MainWindow(QMainWindow):
 
         menu_file = menubar.addMenu("File")
         action_file_new = QAction("New", self, shortcut="Ctrl+N")
-        action_file_new.triggered.connect(partial(self.sudoku_widget.generatePuzzle, self.order))
+        action_file_new.triggered.connect(
+            partial(self.sudoku_widget.generatePuzzle, self.order))
         menu_file.addAction(action_file_new)
         action_file_solve = QAction("Solve", self, shortcut="Ctrl+E")
         action_file_solve.triggered.connect(
