@@ -164,7 +164,7 @@ class SudokuInsertNumberMenu(QMenu):
         for i, btn in enumerate(self.buttons):
             btn.setFixedSize(QSize(button_size, button_size))
             grid.addWidget(btn, i // order, i % order)
-            btn.clicked.connect(partial(self.onBtnClicked, i, parent))
+            btn.clicked.connect(partial(self.onBtnClicked, int(btn.text()), parent))
 
         grid.setSpacing(0)
         self.setLayout(grid)
