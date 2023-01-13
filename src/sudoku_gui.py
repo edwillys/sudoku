@@ -1,23 +1,24 @@
 
 from PyQt5 import QtGui
 from PyQt5.QtGui import QFont, QPainter, QPen, QCursor
-from PyQt5.QtCore import Qt, QRectF, QLineF, QSize, pyqtSlot
+from PyQt5.QtCore import Qt, QLineF, QSize, pyqtSlot
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, \
     QBoxLayout, QGridLayout, QPushButton, QWidget, QMenu, QSizePolicy, QSpacerItem, \
     QMenuBar, QAction
 import sys
 from functools import partial
 import numpy as np
-from sudoku import Sudoku
+from numpy.typing import NDArray
+from sudoku_engine import Sudoku
 
 
 class SudokuWidget(QWidget):
-    def __init__(self, parent, order: int = 3):
+    def __init__(self, parent, order: int = 3) -> None:
         super().__init__(parent)
         self.setMinimumSize(400, 400)
         self.order = order
         self.puzzle = Sudoku(order)
-        self.mainLayout = QBoxLayout(QBoxLayout.LeftToRight, self)
+        self.mainLayout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
         self.grid = SquareBtnGrid(self)
         # the square button grid in between spacers, so that the spacers can
         # shrink / grow upon resizing, in order to keep the grid square
@@ -31,7 +32,7 @@ class SudokuWidget(QWidget):
         self.check_en = True
         self.tips_en = False
 
-    def updateTips(self):
+    def updateTips(self) -> None:
         """
         Updates the puzzle hints to the user
         """
@@ -45,7 +46,7 @@ class SudokuWidget(QWidget):
                 tips[tuple(ind)] = set()
             self.grid.updateToolTips(tips)
 
-    def showTips(self, show: bool):
+    def showTips(self, show: bool) -> None:
         """
         Whether to show puzzle hints to the user
         """
@@ -53,7 +54,7 @@ class SudokuWidget(QWidget):
         if show:
             self.updateTips()
         else:
-            self.grid.updateToolTips([])
+            self.grid.updateToolTips(np.array([]))
 
     def resizeEvent(self, a0: QtGui.QResizeEvent) -> None:
         """
@@ -64,11 +65,11 @@ class SudokuWidget(QWidget):
         w = a0.size().width()
         h = a0.size().height()
         if w > h:  # too wide
-            self.mainLayout.setDirection(QBoxLayout.LeftToRight)
+            self.mainLayout.setDirection(QBoxLayout.Direction.LeftToRight)
             widget_stretch = h
             outer_stretch = (w - widget_stretch) / 2
         else:  # too tall
-            self.mainLayout.setDirection(QBoxLayout.TopToBottom)
+            self.mainLayout.setDirection(QBoxLayout.Direction.TopToBottom)
             widget_stretch = w
             outer_stretch = (h - widget_stretch) / 2
         self.mainLayout.setStretch(0, int(outer_stretch))
@@ -100,7 +101,7 @@ class SudokuWidget(QWidget):
             self.grid.setBtnStylesheetAt(inds_wrong, "background-color: red")
             self.grid.setBtnStylesheetAt(inds_right, "background-color: green")
 
-    def resetCheck(self):
+    def resetCheck(self) -> None:
         inds = np.argwhere(self.puzzle_vals < 0)
         self.grid.setBtnStylesheetAt(inds, "")
 
@@ -114,7 +115,7 @@ class SudokuWidget(QWidget):
         else:
             self.resetCheck()
 
-    def getTips(self) -> np.ndarray:
+    def getTips(self) -> NDArray:
         """
         Interface to get the allowed values for each grid element
         """
@@ -152,7 +153,7 @@ class SudokuWidget(QWidget):
 
 
 class SudokuInsertNumberMenu(QMenu):
-    def __init__(self, parent: QPushButton, sudoku_widget: SudokuWidget, button_size: int = 50, order: int = 3, *args, **kwargs):
+    def __init__(self, parent: QPushButton, sudoku_widget: SudokuWidget, button_size: int = 50, order: int = 3, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.order = order
         self.sudoku_widget = sudoku_widget
@@ -164,12 +165,13 @@ class SudokuInsertNumberMenu(QMenu):
         for i, btn in enumerate(self.buttons):
             btn.setFixedSize(QSize(button_size, button_size))
             grid.addWidget(btn, i // order, i % order)
-            btn.clicked.connect(partial(self.onBtnClicked, int(btn.text()), parent))
+            btn.clicked.connect(
+                partial(self.onBtnClicked, int(btn.text()), parent))
 
         grid.setSpacing(0)
         self.setLayout(grid)
 
-    @ pyqtSlot()
+    #@ pyqtSlot()
     def onBtnClicked(self, number: int, parent: QPushButton) -> None:
         parent.setText(str(number))
         self.sudoku_widget.updateCheck()
@@ -178,7 +180,7 @@ class SudokuInsertNumberMenu(QMenu):
 
 
 class SquareBtnGrid(QWidget):
-    def __init__(self, sudoku_widget: SudokuWidget, *args, **kwargs):
+    def __init__(self, sudoku_widget: SudokuWidget, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.sudoku_widget = sudoku_widget
         self.spacing = 2
@@ -186,7 +188,7 @@ class SquareBtnGrid(QWidget):
         self.gridLayout.setSpacing(self.spacing)
         self.setLayout(self.gridLayout)
 
-    def getVals(self) -> list[list[int]]:
+    def getVals(self) -> NDArray:
         """
         TODO: description
         """
@@ -203,19 +205,19 @@ class SquareBtnGrid(QWidget):
 
         return vals
 
-    def setBtnStylesheetAt(self, positions: list[tuple[int, int]], stylesheet: str) -> None:
+    def setBtnStylesheetAt(self, positions: NDArray[np.intp], stylesheet: str) -> None:
         """
         TODO: description
         """
         for row, col in positions:
             self.buttons[row][col].setStyleSheet(stylesheet)
 
-    def enableElements(self, vals: list[list[bool]]):
+    def enableElements(self, vals: NDArray) -> None:
         for row_ind, row in enumerate(vals):
             for col_ind, val in enumerate(row):
                 self.buttons[row_ind][col_ind].setEnabled(val)
 
-    def setVals(self, vals: list[list[int]]) -> None:
+    def setVals(self, vals: NDArray) -> None:
         """
         TODO: description
         """
@@ -255,7 +257,7 @@ class SquareBtnGrid(QWidget):
                 else:
                     btn.setText(" ")
 
-    @ pyqtSlot()
+    #@ pyqtSlot()
     def onBtnClicked(self, item: QPushButton) -> None:
         """
         TODO: description
@@ -270,9 +272,9 @@ class SquareBtnGrid(QWidget):
         TODO: description
         """
         qp = QPainter(self)
-        pen_normal_line = QPen(Qt.black, 1)
-        pen_bold_line = QPen(Qt.black, 3)
-        qp.setRenderHints(qp.Antialiasing)
+        pen_normal_line = QPen(Qt.GlobalColor.black, 1)
+        pen_bold_line = QPen(Qt.GlobalColor.black, 3)
+        qp.setRenderHints(qp.RenderHint.Antialiasing)
 
         # draw contour rectangle
         x_left = self.buttons[0][0].geometry().left() - self.spacing
@@ -308,7 +310,7 @@ class SquareBtnGrid(QWidget):
             qline = QLineF(x_middle, y_top, x_middle, y_bottom)
             qp.drawLine(qline)
 
-    def reset(self, vals: list[list[int]]) -> None:
+    def reset(self, vals: NDArray) -> None:
         """
         Reset GUI elements with the values from `vals`
         """
@@ -320,7 +322,7 @@ class SquareBtnGrid(QWidget):
                 if val < 0:
                     btn.setText(" ")
 
-    def updateToolTips(self, tips: list) -> None:
+    def updateToolTips(self, tips: NDArray) -> None:
         """
         TODO: description
         """
@@ -339,7 +341,7 @@ class SquareBtnGrid(QWidget):
 
 class MainWindow(QMainWindow):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.order = 3
 
@@ -357,37 +359,44 @@ class MainWindow(QMainWindow):
         menubar = QMenuBar()
 
         menu_file = menubar.addMenu("File")
-        action_file_new = QAction("New", self, shortcut="Ctrl+N")
+        action_file_new = QAction("New", self)
+        action_file_new.setShortcut("Ctrl+N")
         action_file_new.triggered.connect(
             partial(self.sudoku_widget.generatePuzzle, self.order))
         menu_file.addAction(action_file_new)
-        action_file_solve = QAction("Solve", self, shortcut="Ctrl+E")
+        action_file_solve = QAction("Solve", self)
+        action_file_solve.setShortcut("Ctrl+E")
         action_file_solve.triggered.connect(
             partial(self.sudoku_widget.showSolution))
         menu_file.addAction(action_file_solve)
-        action_file_reset = QAction("Reset", self, shortcut="Ctrl+R")
+        action_file_reset = QAction("Reset", self)
+        action_file_reset.setShortcut("Ctrl+R")
         action_file_reset.triggered.connect(partial(self.sudoku_widget.reset))
         menu_file.addAction(action_file_reset)
         menubar.addMenu(menu_file)
 
         menu_option = menubar.addMenu("Option")
-        action_option_tips = QAction(
-            "Show Tips", self, shortcut="Ctrl+T", checkable=True)
+        action_option_tips = QAction("Show Tips", self)
+        action_option_tips.setShortcut("Ctrl+T")
+        action_option_tips.setCheckable(True)
         action_option_tips.triggered.connect(self.sudoku_widget.showTips)
         menu_option.addAction(action_option_tips)
-        action_file_check = QAction(
-            "Check", self, shortcut="Ctrl+H", checkable=True, checked=True)
+        action_file_check = QAction("Check", self)
+        action_file_check.setShortcut("Ctrl+H")
+        action_file_check.setCheckable(True)
+        action_file_check.setChecked(True)
         action_file_check.triggered.connect(
             partial(self.sudoku_widget.setCheckEnable))
         menu_option.addAction(action_file_check)
         menu_option_order = menu_option.addMenu("Puzzle Order")
         self.action_orders = {
-            k: QAction(
-                str(k), self, shortcut="Ctrl+{}".format(k), checkable=True)
+            k: QAction(str(k), self)
             for k in [3, 4]
         }
 
         for k, v in self.action_orders.items():
+            v.setShortcut("Ctrl+{}".format(k))
+            v.setCheckable(True)
             v.triggered.connect(partial(self.onOrderChange, k))
             menu_option_order.addAction(v)
         self.action_orders[self.order].setChecked(True)
@@ -395,7 +404,7 @@ class MainWindow(QMainWindow):
 
         self.setMenuBar(menubar)
 
-    @pyqtSlot()
+    #@pyqtSlot()
     def onOrderChange(self, order: int) -> None:
         """
         TODO: description
@@ -403,11 +412,11 @@ class MainWindow(QMainWindow):
         if order != self.order:
             for k, v in self.action_orders.items():
                 v.setChecked(k == order)
-            self.sudoku_widget.setPuzzleOrder(order)
+            self.sudoku_widget.generatePuzzle(order)
             self.order = order
 
 
-def main():
+def main() -> None:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.resize(700, 800)

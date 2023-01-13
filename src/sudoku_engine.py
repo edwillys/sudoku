@@ -1,6 +1,5 @@
 import random
 import logging
-import math
 
 
 class Sudoku:
@@ -13,7 +12,7 @@ class Sudoku:
         if grid is not None:
             self.init_from_grid(grid)
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: "Sudoku") -> bool:
         """
         Check whether rows, cols and blocks are equal to the input object
         """
@@ -297,7 +296,7 @@ class Sudoku:
         logging.info(
             "Puzzle generated after {} iterations".format(generate_cnt))
 
-    def sanity_checks(self, rcb: dict[int]) -> bool:
+    def sanity_checks(self, rcb: list[dict[int, int]]) -> bool:
         # check if rows, cols and blocks are unique
         for el in rcb:
             vals = el.values()
@@ -337,6 +336,6 @@ class Sudoku:
 
 
 if __name__ == "__main__":
-    sdk = Sudoku()
+    sdk = Sudoku(3)
     sdk.generate()
     print(sdk)
