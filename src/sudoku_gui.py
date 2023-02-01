@@ -1,4 +1,3 @@
-
 from PyQt5 import QtGui
 from PyQt5.QtGui import QFont, QPainter, QPen, QCursor
 from PyQt5.QtCore import Qt, QLineF, QSize, pyqtSlot
@@ -171,7 +170,6 @@ class SudokuInsertNumberMenu(QMenu):
         grid.setSpacing(0)
         self.setLayout(grid)
 
-    #@ pyqtSlot()
     def onBtnClicked(self, number: int, parent: QPushButton) -> None:
         parent.setText(str(number))
         self.sudoku_widget.updateCheck()
@@ -257,7 +255,6 @@ class SquareBtnGrid(QWidget):
                 else:
                     btn.setText(" ")
 
-    #@ pyqtSlot()
     def onBtnClicked(self, item: QPushButton) -> None:
         """
         TODO: description
@@ -404,7 +401,6 @@ class MainWindow(QMainWindow):
 
         self.setMenuBar(menubar)
 
-    #@pyqtSlot()
     def onOrderChange(self, order: int) -> None:
         """
         TODO: description
