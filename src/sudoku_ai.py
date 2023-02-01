@@ -93,7 +93,6 @@ class MoveablePoint(QGraphicsEllipseItem):
         self.index = index
         self.parent_polygon = parent
         self.clicked = False
-        #self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
 
     def mousePressEvent(self, event: 'QGraphicsSceneMouseEvent') -> None:
         self.clicked = True
@@ -257,7 +256,7 @@ class SudokuView(QGraphicsView):
         alpha = 1.3
         beta = 20
         # convert the image to grayscale format
-        img_gray = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
+        img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         if constrast_correction:
             img_gray = cv2.convertScaleAbs(
@@ -279,26 +278,76 @@ class SudokuView(QGraphicsView):
 
         return (contours, hierarchy)
 
-    def findPolygons(self, image: np.ndarray, pct_arc: float = 0.001):
+    def findPolygons(self, image: np.ndarray, pct_arc=0.001, pct_area=0.,
+                     min_points=1, max_points=sys.maxsize, closed=False):
         polygons = []
         if image is not None:
             contours, _ = self.findContours(image)
             polygons = []
             for cnt in contours:
-                arc_len = cv2.arcLength(cnt, False)
-                poly = cv2.approxPolyDP(cnt, pct_arc * arc_len, False)
-                polygons += [poly]
+                arc_len = cv2.arcLength(cnt, closed)
+                poly = cv2.approxPolyDP(cnt, pct_arc * arc_len, closed)
+                if len(poly) >= min_points and len(poly) <= max_points:
+                    w, h, _ = image.shape
+                    img_area = w * h
+                    poly_area = cv2.contourArea(poly)
+                    if poly_area >= (pct_area * img_area):
+                        # squeeze the array by removing useless dimension
+                        poly = [(pt[0][0], pt[0][1]) for pt in poly]
+                        polygons += [poly]
             print("Number of polygons detected:", str(len(polygons)))
         return polygons
 
-    def drawPolygons(self):
+    def findLines(self, image, standard=True):
+        line_points = []
+        # Edge detection
+        dst = cv2.Canny(image, 50, 200, None, 3)
+        if standard:
+            #  Standard Hough Line Transform
+            lines = cv2.HoughLines(dst, 1, np.pi / 180, 150, None, 0, 0)
+            if lines is not None:
+                for i in range(0, len(lines)):
+                    rho = lines[i][0][0]
+                    theta = lines[i][0][1]
+                    a = np.cos(theta)
+                    b = np.sin(theta)
+                    x0 = a * rho
+                    y0 = b * rho
+                    pt1 = (int(x0 + 1000*(-b)), int(y0 + 1000*(a)))
+                    pt2 = (int(x0 - 1000*(-b)), int(y0 - 1000*(a)))
+                    line_points += [(pt1, pt2)]
+        else:
+            # Probabilistic Line Transform
+            linesP = cv2.HoughLinesP(dst, 1, np.pi / 180, 50, None, 50, 10)
+            # Draw the lines
+            if linesP is not None:
+                for i in range(0, len(linesP)):
+                    l = linesP[i][0]
+                    line_points += [((l[0], l[1]), (l[2], l[3]))]
+
+        return line_points
+
+    def drawLines(self):
+        polys = self.findLines(self.cv_image)
+        self.drawPolygons(polys)
+
+    def drawQuads(self):
+        polys = self.findPolygons(self.cv_image, 0.1, 0.001, 4, 4, True)
+        self.drawPolygons(polys)
+
+    def drawAllPolygons(self):
+        polys = self.findPolygons(self.cv_image)
+        self.drawPolygons(polys)
+
+    def drawPolygons(self, polygons):
         self.removePolygons()
-        contours = self.findPolygons(self.cv_image)
-        for cnt in contours:
-            points = [QPointF(point[0][0], point[0][1]) for point in cnt]
+        for points in polygons:
+            points = [QPointF(point[0], point[1]) for point in points]
             # polygon
             poly = QGraphicsPolygonItem(QPolygonF(points))
-            poly.setPen(QPen(QtCore.Qt.green, 2))
+            pen = QPen(QtCore.Qt.green, 2)
+            pen.setCosmetic(True)
+            poly.setPen(pen)
             self.scene().addItem(poly)
             self.polygons += [poly]
 
@@ -410,11 +459,23 @@ class MainWindow(QMainWindow):
             partial(self.sdk_view.drawReset))
         menu_edit.addAction(action_edit_reset)
 
-        action_edit_allpoly = QAction("Draw All Polygons", self)
-        action_edit_allpoly.setShortcut("Ctrl+A")
-        action_edit_allpoly.triggered.connect(
-            partial(self.sdk_view.drawPolygons))
-        menu_edit.addAction(action_edit_allpoly)
+        action_edit_draw_poly = QAction("Draw Polygons", self)
+        action_edit_draw_poly.setShortcut("Ctrl+A")
+        action_edit_draw_poly.triggered.connect(
+            partial(self.sdk_view.drawAllPolygons))
+        menu_edit.addAction(action_edit_draw_poly)
+
+        action_edit_draw_quad = QAction("Draw Quadrilaterals", self)
+        action_edit_draw_quad.setShortcut("Ctrl+Q")
+        action_edit_draw_quad.triggered.connect(
+            partial(self.sdk_view.drawQuads))
+        menu_edit.addAction(action_edit_draw_quad)
+
+        action_edit_draw_lines = QAction("Draw Lines", self)
+        action_edit_draw_lines.setShortcut("Ctrl+L")
+        action_edit_draw_lines.triggered.connect(
+            partial(self.sdk_view.drawLines))
+        menu_edit.addAction(action_edit_draw_lines)
 
         action_edit_fc = QAction("Draw Contour", self)
         action_edit_fc.setShortcut("Ctrl+1")
