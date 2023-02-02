@@ -197,9 +197,13 @@ class SudokuView(QGraphicsView):
         self.fitSceneToPixmap(pixmap)
 
     def cvMatToQImage(self, inMat: np.ndarray):
-        height, width, _ = inMat.shape
-        bytesPerLine = 3 * width
-        return QImage(inMat.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
+        height = inMat.shape[0]
+        width = inMat.shape[1]
+        dim = inMat.ndim
+        if dim == 3:
+            return QImage(inMat.data, width, height, 3 * width, QImage.Format_RGB888).rgbSwapped()
+        else:
+            return QImage(inMat.data, width, height, width, QImage.Format_Grayscale8)
 
     def cropToContourAndDraw(self):
         if self.quadrilateral:
@@ -234,21 +238,6 @@ class SudokuView(QGraphicsView):
             pixmap = QPixmap.fromImage(self.cvMatToQImage(self.cv_image))
             self.removeQuadrilateral()
             self.drawPixmap(pixmap)
-
-    def drawGridLines(self):
-        self.removeGridLines()
-        contours = self.findGridLines(self.cv_image, 0.5, 0.8)
-
-        for line in contours:
-            linef = QLineF(
-                QPointF(line[0][0][0], line[0][0][1]),
-                QPointF(line[1][0][0], line[1][0][1])
-            )
-            # polygon
-            grid_line = QGraphicsLineItem(linef)
-            grid_line.setPen(QPen(QtCore.Qt.green, 5))
-            self.grid_lines += [grid_line]
-            self.scene().addItem(grid_line)
 
     def findContours(self, image):
         simple_thresh = False
@@ -298,32 +287,73 @@ class SudokuView(QGraphicsView):
             print("Number of polygons detected:", str(len(polygons)))
         return polygons
 
-    def findLines(self, image, standard=True):
+    def findLines(self, image, th=np.pi/2.):
         line_points = []
+        #magic_num = 21
+        magic_num = 3
+        # convert the image to grayscale format
+        img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        img_blurred = cv2.GaussianBlur(img_gray, (magic_num, magic_num), magic_num)
+        img_thresh = cv2.adaptiveThreshold(
+            img_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, magic_num, 3)
         # Edge detection
-        dst = cv2.Canny(image, 50, 200, None, 3)
-        if standard:
-            #  Standard Hough Line Transform
-            lines = cv2.HoughLines(dst, 1, np.pi / 180, 150, None, 0, 0)
-            if lines is not None:
-                for i in range(0, len(lines)):
-                    rho = lines[i][0][0]
-                    theta = lines[i][0][1]
-                    a = np.cos(theta)
-                    b = np.sin(theta)
-                    x0 = a * rho
-                    y0 = b * rho
-                    pt1 = (int(x0 + 1000*(-b)), int(y0 + 1000*(a)))
-                    pt2 = (int(x0 - 1000*(-b)), int(y0 - 1000*(a)))
-                    line_points += [(pt1, pt2)]
-        else:
-            # Probabilistic Line Transform
-            linesP = cv2.HoughLinesP(dst, 1, np.pi / 180, 50, None, 50, 10)
-            # Draw the lines
-            if linesP is not None:
-                for i in range(0, len(linesP)):
-                    l = linesP[i][0]
-                    line_points += [((l[0], l[1]), (l[2], l[3]))]
+        dst = cv2.Canny(img_thresh, 50, 200, None, 7, False)
+
+        pixmap = QPixmap.fromImage(self.cvMatToQImage(img_thresh))
+        self.drawPixmap(pixmap)
+
+        #  Standard Hough Line Transform
+        lines = cv2.HoughLines(dst, 1, th, 200, None, 0, 0)
+        line_points_polar = []
+        if lines is not None:
+            for i in range(0, len(lines)):
+                rho = lines[i][0][0]
+                theta = lines[i][0][1]
+                line_points_polar += [(rho, theta)]
+
+        line_points_polar = sorted(
+            line_points_polar, key=lambda tup: (tup[1], tup[0]))
+
+        print(f"Number of lines detected: {len(line_points_polar)}")
+
+        max_dim = max(image.shape[:2])
+        min_dim = min(image.shape[:2])
+
+        # Get rid of almost parallel lines that are too close from each other
+        theta_margin = 3. * (np.pi / 180.)
+        rho_margin = max(10., min_dim * 0.012)
+
+        i = 0
+        while i < len(line_points_polar):
+            inds_to_delete = []
+            base_rho, base_theta = line_points_polar[i]
+            j = i + 1
+            for (rho, theta) in line_points_polar[i+1:]:
+                # since line_points_polar is sorted by increasing values of theta and rho, we
+                # can break the search as soon as we find the first entry that doesn't fit the
+                # margins for rho and theta
+                if abs(rho - base_rho) > rho_margin or abs(theta - base_theta) > theta_margin:
+                    break
+                j += 1
+            if j > (i + 1):
+                inds_to_delete = list(range(i+1, j))
+                avg_rho, avg_theta = np.average(line_points_polar[i:j], 0)
+                line_points_polar[i] = (avg_rho, avg_theta)
+                for ind in reversed(inds_to_delete):
+                    del line_points_polar[ind]
+            i += 1
+
+        print(f"Out of each {len(line_points_polar)} are single")
+
+        # for rho,theta in parallel_lines:
+        for rho, theta in line_points_polar:
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a * rho
+            y0 = b * rho
+            pt1 = (int(x0 + max_dim*(-b)), int(y0 + max_dim*(a)))
+            pt2 = (int(x0 - max_dim*(-b)), int(y0 - max_dim*(a)))
+            line_points += [(pt1, pt2)]
 
         return line_points
 
@@ -350,22 +380,6 @@ class SudokuView(QGraphicsView):
             poly.setPen(pen)
             self.scene().addItem(poly)
             self.polygons += [poly]
-
-    def findGridLines(self, image: np.ndarray, pct_size: float = 0.8, pct_arc: float = 0.1):
-        polygons = []
-        if image is not None:
-            contours, _ = self.findContours(image)
-            height, width, _ = image.shape
-            polygons = []
-            for cnt in contours:
-                arc_len = cv2.arcLength(cnt, False)
-                poly = cv2.approxPolyDP(cnt, pct_arc * arc_len, False)
-                arc_len = cv2.arcLength(poly, False)
-                if arc_len >= (pct_size * min(width, height)):
-                    if len(poly) >= 2:  # TODO: should it be strictly equal?
-                        polygons += [poly]
-            print("Number of polygons detected:", str(len(polygons)))
-        return polygons
 
     def drawMainQuadrilateral(self):
         self.removeQuadrilateral()
@@ -488,12 +502,6 @@ class MainWindow(QMainWindow):
         action_edit_crop.triggered.connect(
             partial(self.onCrop))
         menu_edit.addAction(action_edit_crop)
-
-        action_edit_gridlines = QAction("Draw Grid Lines", self)
-        action_edit_gridlines.setShortcut("Ctrl+3")
-        action_edit_gridlines.triggered.connect(
-            partial(self.sdk_view.drawGridLines))
-        menu_edit.addAction(action_edit_gridlines)
 
         menubar.addMenu(menu_edit)
 
