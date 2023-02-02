@@ -288,14 +288,16 @@ class SudokuView(QGraphicsView):
         return polygons
 
     def findLines(self, image, th=np.pi/2.):
-        line_points = []
-        #magic_num = 21
-        magic_num = 3
         # convert the image to grayscale format
         img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        img_blurred = cv2.GaussianBlur(img_gray, (magic_num, magic_num), magic_num)
+
+        magic_num = 3
+        img_blurred = cv2.GaussianBlur(
+            img_gray, (magic_num, magic_num), magic_num)
+        # img_blurred = cv2.medianBlur(img_gray, magic_num)
         img_thresh = cv2.adaptiveThreshold(
-            img_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, magic_num, 3)
+            img_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, magic_num, 3)
+
         # Edge detection
         dst = cv2.Canny(img_thresh, 50, 200, None, 7, False)
 
@@ -304,31 +306,82 @@ class SudokuView(QGraphicsView):
 
         #  Standard Hough Line Transform
         lines = cv2.HoughLines(dst, 1, th, 200, None, 0, 0)
-        line_points_polar = []
+        lines_polar = []
         if lines is not None:
             for i in range(0, len(lines)):
                 rho = lines[i][0][0]
                 theta = lines[i][0][1]
-                line_points_polar += [(rho, theta)]
+                lines_polar += [(rho, theta)]
 
-        line_points_polar = sorted(
-            line_points_polar, key=lambda tup: (tup[1], tup[0]))
+        lines_polar = sorted(
+            lines_polar, key=lambda tup: (tup[1], tup[0]))
 
-        print(f"Number of lines detected: {len(line_points_polar)}")
+        print(f"Number of lines detected: {len(lines_polar)}")
 
+        return lines_polar
+
+    def findGridQuads(self, image):
+        w, h = image.shape[:2]
         max_dim = max(image.shape[:2])
         min_dim = min(image.shape[:2])
-
-        # Get rid of almost parallel lines that are too close from each other
         theta_margin = 3. * (np.pi / 180.)
-        rho_margin = max(10., min_dim * 0.012)
+        rho_margin = max(10., min_dim * 0.03)
+        # Find vertical and horizontal lines
+        lines_polar = self.findLines(image, np.pi/2.)
+        # Get rid of almost parallel lines that are too close from each other
+        lines_polar = self.linesSingleOut(
+            lines_polar, theta_margin, rho_margin)
 
+        # split vertical and horizontal lines
+        # they are grouped into similar angles, given the theta margin
+        min_angle = np.pi / 2. - theta_margin
+        max_angle = np.pi / 2. + theta_margin
+        v_lines = [line for line in lines_polar
+                   if line[1] <= max_angle and line[1] >= min_angle]
+        min_angles = (0., np.pi - theta_margin)
+        max_angles = (theta_margin, np.pi)
+        h_lines = [line for line in lines_polar
+                   if (line[1] <= max_angles[0] and line[1] >= min_angles[0]) or
+                      (line[1] <= max_angles[1] and line[1] >= min_angles[1])]
+        # calculate the distances between lines
+        v_line_dist = np.diff(np.array(v_lines)[:, 0])
+        h_line_dist = np.diff(np.array(h_lines)[:, 0])
+
+        # as we are interested in a roughly square grid, we unify
+        # one distance for horizontal and one for vertical lines.
+        # we take the median because there is still some risk of outliers
+        # hanging around, even after singling out the almost parallel lines
+        h_delta = np.median(h_line_dist)
+        v_delta = np.median(v_line_dist)
+        # calculate the number of steps. We could have some
+        # extra robustness here as the sudoku grids are always
+        # perfect squares. Something in the lines of
+        # h_steps = pow(np.sqrt(round(w / h_delta)), 2.)
+        # v_steps = pow(np.sqrt(round(h / v_delta)), 2.)
+        # However, this doesn't seem to be necessary until now...
+        h_steps = int(round(w / h_delta))
+        v_steps = int(round(h / v_delta))
+
+        grid_polys = []
+        for i in range(int(h_steps)):
+            for j in range(int(v_steps)):
+                top_left = (i * h_delta, j * v_delta)
+                top_right = ((i+1) * h_delta, j * v_delta)
+                bottom_left = (i * h_delta, (j+1) * v_delta)
+                bottom_right = ((i+1) * h_delta, (j+1) * v_delta)
+                grid_polys += [[top_left, top_right,
+                                bottom_right, bottom_left]]
+
+        return grid_polys
+
+    def linesSingleOut(self, lines, theta_margin=3.*(np.pi / 180.), rho_margin=10.):
+        # Get rid of almost parallel lines that are too close from each other
         i = 0
-        while i < len(line_points_polar):
+        while i < len(lines):
             inds_to_delete = []
-            base_rho, base_theta = line_points_polar[i]
+            base_rho, base_theta = lines[i]
             j = i + 1
-            for (rho, theta) in line_points_polar[i+1:]:
+            for (rho, theta) in lines[i+1:]:
                 # since line_points_polar is sorted by increasing values of theta and rho, we
                 # can break the search as soon as we find the first entry that doesn't fit the
                 # margins for rho and theta
@@ -337,28 +390,29 @@ class SudokuView(QGraphicsView):
                 j += 1
             if j > (i + 1):
                 inds_to_delete = list(range(i+1, j))
-                avg_rho, avg_theta = np.average(line_points_polar[i:j], 0)
-                line_points_polar[i] = (avg_rho, avg_theta)
+                avg_rho, avg_theta = np.average(lines[i:j], 0)
+                lines[i] = (avg_rho, avg_theta)
                 for ind in reversed(inds_to_delete):
-                    del line_points_polar[ind]
+                    del lines[ind]
             i += 1
 
-        print(f"Out of each {len(line_points_polar)} are single")
+        print(f"Singled out {len(lines)} lines")
+        return lines
 
-        # for rho,theta in parallel_lines:
-        for rho, theta in line_points_polar:
+    def linesConvertPolarToPoint(self, lines_polar, scale=10000):
+        line_points = []
+        for rho, theta in lines_polar:
             a = np.cos(theta)
             b = np.sin(theta)
             x0 = a * rho
             y0 = b * rho
-            pt1 = (int(x0 + max_dim*(-b)), int(y0 + max_dim*(a)))
-            pt2 = (int(x0 - max_dim*(-b)), int(y0 - max_dim*(a)))
+            pt1 = (int(x0 + scale*(-b)), int(y0 + scale*(a)))
+            pt2 = (int(x0 - scale*(-b)), int(y0 - scale*(a)))
             line_points += [(pt1, pt2)]
-
         return line_points
 
-    def drawLines(self):
-        polys = self.findLines(self.cv_image)
+    def drawGridQuads(self):
+        polys = self.findGridQuads(self.cv_image)
         self.drawPolygons(polys)
 
     def drawQuads(self):
@@ -485,10 +539,10 @@ class MainWindow(QMainWindow):
             partial(self.sdk_view.drawQuads))
         menu_edit.addAction(action_edit_draw_quad)
 
-        action_edit_draw_lines = QAction("Draw Lines", self)
-        action_edit_draw_lines.setShortcut("Ctrl+L")
+        action_edit_draw_lines = QAction("Draw Grid Cells", self)
+        action_edit_draw_lines.setShortcut("Ctrl+G")
         action_edit_draw_lines.triggered.connect(
-            partial(self.sdk_view.drawLines))
+            partial(self.sdk_view.drawGridQuads))
         menu_edit.addAction(action_edit_draw_lines)
 
         action_edit_fc = QAction("Draw Contour", self)
