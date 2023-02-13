@@ -1,7 +1,7 @@
 import torch
 import torch_directml
 from torch import nn, optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import datasets
 from torchvision import transforms
 import numpy as np
@@ -49,7 +49,7 @@ class ConvDropout(nn.Sequential):
 
 class MyLeNet5(nn.Sequential):
     def __init__(self, numch_in=1, numch_out=10, numch_conv=[6, 16], numch_dense=[120, 84],
-                 h_w: tuple[int, int] = (32, 32), dropout_rate=0.2):
+                 h_w: tuple[int, int] = (32, 32), dropout_rate=0.3):
         numch_conv = [numch_in, *numch_conv]
         ksize_conv2d = 5
         stride_conv2d = 1
@@ -234,10 +234,12 @@ class Trainer():
         batch_len = len(self.loader_train)
         # set to train mode
         self.model.train()
+        # just to get rid of annoying pylint warning
+        acc_stats = (0, 0, 0)
+        loss_stats = (0, 0, 0)
         for epoch in range(self.epochs):
-            acc_stats = (0., float("inf"), 0.)  # avg, min, max
-            loss_stats = (0., float("inf"), 0.)  # avg, min, max
-            rotations = [0., -1., 1.]
+            stats_init = False
+            rotations = [0., -2., 2., -4, 4]
             for rotation in rotations:
                 for i, (X_train, y_train) in enumerate(self.loader_train):
                     if rotation != 0:
@@ -254,8 +256,12 @@ class Trainer():
                     # backward propagation
                     loss.backward()
                     self.fn_optimizer.step()
-                    # stats
                     acc = self.accuracy(y_logits, y_train)
+                    # stats
+                    if not stats_init:
+                        acc_stats = (acc, acc, acc)  # avg, min, max
+                        loss_stats = (loss, loss, loss)  # avg, min, max
+                        stats_init = True
                     acc_stats = self.stats(acc, *acc_stats)
                     loss_stats = self.stats(loss, *loss_stats)
 
@@ -289,8 +295,10 @@ class Trainer():
     def test(self):
         self.model.eval()
         self.model.to("cpu")  # TODO: why do we need this?
-        acc_stats = (0., float("inf"), 0.)  # avg, min, max
-        loss_stats = (0., float("inf"), 0.)  # avg, min, max
+        stats_init = False
+        # just to get rid of annoying pylint warning
+        acc_stats = (0, 0, 0)
+        loss_stats = (0, 0, 0)
         with torch.inference_mode():
             for X_test, y_test in self.loader_test:
                 # X_test = X_test.to(self.device)
@@ -298,6 +306,10 @@ class Trainer():
                 test_logits = self.model(X_test)
                 loss = self.fn_loss(test_logits, y_test)
                 acc = self.accuracy(test_logits, y_test)
+                if not stats_init:
+                    acc_stats = (acc, acc, acc)  # avg, min, max
+                    loss_stats = (loss, loss, loss)  # avg, min, max
+                    stats_init = True
                 acc_stats = self.stats(acc, *acc_stats)
                 loss_stats = self.stats(loss, *loss_stats)
         self.model.to(self.device)
@@ -316,9 +328,12 @@ def seed_worker(worker_id):
 def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     logging.info("Preparing model and dataset")
-    shape = (32, 32)
+
     base_path = Path(__file__).parent / Path("../res/DL")
     base_path.mkdir(parents=True, exist_ok=True)
+
+    shape = (32, 32)
+    num_classes = 16  # 0..1..A..F, excluding the remaining letters
     data_train = datasets.EMNIST(
         str(base_path), "balanced", train=True, download=True,
         transform=transforms.Compose([
@@ -335,6 +350,11 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
             transforms.Normalize(0.1325, 0.3105)
         ])
     )
+    # We're only interested in the hexadecimal characters
+    data_train = Subset(data_train, torch.argwhere(
+        data_train.targets < num_classes).flatten().numpy())
+    data_test = Subset(data_test, torch.argwhere(
+        data_test.targets < num_classes).flatten().numpy())
     # loaders
     batch_size = 64
     num_workers = 1
@@ -350,12 +370,12 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
 
     # model = Model(numch_out=10)
     # model = Model()
-    model = MyLeNet5(numch_out=len(data_train.classes),
+    model = MyLeNet5(numch_out=num_classes,
                      h_w=shape, numch_conv=[32, 64])
     if fpath_load:
         model.load_state_dict(torch.load(base_path / Path(fpath_load)))
 
-    trainer = Trainer(model, loader_train, loader_test, epochs=40)
+    trainer = Trainer(model, loader_train, loader_test, epochs=30)
 
     if should_train:
         logging.info("Beginning the training")
@@ -380,4 +400,5 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
 if __name__ == "__main__":
     # main()
     # main(fpath_load="model_0.pth", should_train=False)
-    main(fpath_save="model_1.pth")
+    main(fpath_load="model_3.pth", should_train=False)
+    # main(fpath_save="model_3.pth")
