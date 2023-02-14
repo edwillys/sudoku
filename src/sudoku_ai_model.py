@@ -4,6 +4,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets
 from torchvision import transforms
+import torchvision
 import numpy as np
 import logging
 from pathlib import Path
@@ -49,7 +50,7 @@ class ConvDropout(nn.Sequential):
 
 class MyLeNet5(nn.Sequential):
     def __init__(self, numch_in=1, numch_out=10, numch_conv=[6, 16], numch_dense=[120, 84],
-                 h_w: tuple[int, int] = (32, 32), dropout_rate=0.3):
+                 shape_in: tuple[int, int] = (32, 32), dropout_rate=0.3, transf=None):
         numch_conv = [numch_in, *numch_conv]
         ksize_conv2d = 5
         stride_conv2d = 1
@@ -68,7 +69,8 @@ class MyLeNet5(nn.Sequential):
         ]
         conv = nn.Sequential(*conv_blocks)
 
-        h, w = h_w
+        self.shape_in = shape_in
+        h, w = shape_in
         dilation = 1
         padding = 0
         for _ in range(len(numch_conv) - 1):
@@ -97,8 +99,11 @@ class MyLeNet5(nn.Sequential):
         super().__init__(conv, dense)
         self.conv = conv
         self.dense = dense
+        self.transf = transf
 
     def forward(self, x):
+        if self.transf:
+            x = self.transf(x)
         out = self.conv(x)
         out = out.flatten(1, -1)
         return self.dense(out)
@@ -239,7 +244,7 @@ class Trainer():
         loss_stats = (0, 0, 0)
         for epoch in range(self.epochs):
             stats_init = False
-            rotations = [0., -2., 2., -4, 4]
+            rotations = [0., -1, 1, -2., 2., -4, 4]
             for rotation in rotations:
                 for i, (X_train, y_train) in enumerate(self.loader_train):
                     if rotation != 0:
@@ -338,16 +343,18 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
         str(base_path), "balanced", train=True, download=True,
         transform=transforms.Compose([
             transforms.Resize(shape),
-            transforms.ToTensor(),
-            transforms.Normalize(0.1307, 0.3081)
+            transforms.RandomHorizontalFlip(1.0),
+            transforms.RandomRotation((90, 90)),
+            transforms.ToTensor()
         ])
     )
     data_test = datasets.EMNIST(
         str(base_path), "balanced", train=False, download=True,
         transform=transforms.Compose([
             transforms.Resize(shape),
-            transforms.ToTensor(),
-            transforms.Normalize(0.1325, 0.3105)
+            transforms.RandomHorizontalFlip(1.0),
+            transforms.RandomRotation((90, 90)),
+            transforms.ToTensor()
         ])
     )
     # We're only interested in the hexadecimal characters
@@ -355,7 +362,7 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
         data_train.targets < num_classes).flatten().numpy())
     data_test = Subset(data_test, torch.argwhere(
         data_test.targets < num_classes).flatten().numpy())
-    # loaders
+
     batch_size = 64
     num_workers = 1
     torch.manual_seed(666)
@@ -370,12 +377,14 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
 
     # model = Model(numch_out=10)
     # model = Model()
-    model = MyLeNet5(numch_out=num_classes,
-                     h_w=shape, numch_conv=[32, 64])
+    model = MyLeNet5(
+        numch_out=num_classes, shape_in=shape, numch_conv=[32, 64],
+        transf=transforms.Normalize(0.1307, 0.3081)
+    )
     if fpath_load:
         model.load_state_dict(torch.load(base_path / Path(fpath_load)))
 
-    trainer = Trainer(model, loader_train, loader_test, epochs=30)
+    trainer = Trainer(model, loader_train, loader_test, epochs=5)
 
     if should_train:
         logging.info("Beginning the training")
@@ -398,7 +407,5 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
 
 
 if __name__ == "__main__":
-    # main()
     # main(fpath_load="model_0.pth", should_train=False)
-    main(fpath_load="model_3.pth", should_train=False)
-    # main(fpath_save="model_3.pth")
+    main(fpath_save="model_1.pth")

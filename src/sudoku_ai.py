@@ -10,6 +10,11 @@ import numpy as np
 import typing
 import cv2 as cv2
 from os import path as osp
+from sudoku_ai_model import MyLeNet5
+from pathlib import Path
+from skimage.segmentation import clear_border
+import torch
+from torchvision import transforms
 
 
 class MoveableQuadrilateral(QGraphicsPolygonItem):
@@ -123,6 +128,14 @@ class SudokuView(QGraphicsView):
         self.quadrilateral = None
         self.cv_image = None
         self.file_name = ""
+
+        base_path = Path(__file__).parent / Path("../res/DL")
+        self.model = MyLeNet5(
+            numch_out=16, numch_conv=[32, 64],
+            transf=transforms.Normalize(0.1307, 0.3081)
+        )
+        #self.model.load_state_dict(torch.load(base_path / Path("model_1.pth")))
+        self.model.load_state_dict(torch.load(base_path / Path("model_0.pth")))
 
         scene = QGraphicsScene()
 
@@ -301,8 +314,8 @@ class SudokuView(QGraphicsView):
         # Edge detection
         dst = cv2.Canny(img_thresh, 50, 200, None, 7, False)
 
-        pixmap = QPixmap.fromImage(self.cvMatToQImage(img_thresh))
-        self.drawPixmap(pixmap)
+        # pixmap = QPixmap.fromImage(self.cvMatToQImage(img_thresh))
+        # self.drawPixmap(pixmap)
 
         #  Standard Hough Line Transform
         lines = cv2.HoughLines(dst, 1, th, 200, None, 0, 0)
@@ -322,7 +335,6 @@ class SudokuView(QGraphicsView):
 
     def findGridQuads(self, image):
         w, h = image.shape[:2]
-        max_dim = max(image.shape[:2])
         min_dim = min(image.shape[:2])
         theta_margin = 3. * (np.pi / 180.)
         rho_margin = max(10., min_dim * 0.03)
@@ -374,6 +386,51 @@ class SudokuView(QGraphicsView):
 
         return grid_polys
 
+    def findGridNumbers(self, image):
+        polys = self.findGridQuads(self.cv_image)
+        # limit the amount of classes for 9x9, 16x16 or 25x25 grids
+        if len(polys) == 81:
+            class_range = slice(1,10,1)
+        elif len(polys) == 256:
+            class_range = slice(0,15,1)
+        elif len(polys) == 625:
+            class_range = slice(1,25,1)
+        else:
+            class_range = slice(0,len(polys),1)
+        # convert the image to grayscale format
+        img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        self.model.eval()
+        numbers = {}
+        with torch.inference_mode():
+            for poly in polys:
+                tl_x, tl_y = poly[0]
+                tr_x, tr_y = poly[1]
+                br_x, br_y = poly[2]
+                bl_x, bl_y = poly[3]
+                w = tr_x - tl_x
+                h = bl_y - tl_y
+                cx = tl_x + w / 2.
+                cy = tl_y + h / 2.
+                crop_img = img_gray[int(tl_y):int(bl_y), int(tl_x):int(tr_x)]
+                crop_img = cv2.resize(crop_img, self.model.shape_in)
+                #crop_img = cv2.GaussianBlur(crop_img,(5,5),0)
+                crop_img = cv2.threshold(crop_img, 0, 255,
+                                         cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+                crop_img = clear_border(crop_img)
+                density = crop_img.sum() / np.prod(self.model.shape_in) / 255.
+                print(f"Density = {density * 100}%")
+                if density > 0.05:
+                    x = crop_img.astype(np.float32) / 255.
+                    x = np.array([[x]])
+                    res = self.model(torch.from_numpy(x))
+                    res = res[0][class_range]
+                    num = res.argmax().item() + class_range.start
+                    print(f"Guessed number = {num}")
+                    cv2.imshow("Cell Thresh", crop_img)
+                    cv2.waitKey(0)
+                    numbers[(cx, cy)] = num
+        return numbers
+
     def linesSingleOut(self, lines, theta_margin=3.*(np.pi / 180.), rho_margin=10.):
         # Get rid of almost parallel lines that are too close from each other
         i = 0
@@ -415,6 +472,10 @@ class SudokuView(QGraphicsView):
         polys = self.findGridQuads(self.cv_image)
         self.drawPolygons(polys)
 
+    def drawGridNumbers(self):
+        nums = self.findGridNumbers(self.cv_image)
+        self.drawNumbers(nums)
+
     def drawQuads(self):
         polys = self.findPolygons(self.cv_image, 0.1, 0.001, 4, 4, True)
         self.drawPolygons(polys)
@@ -422,6 +483,9 @@ class SudokuView(QGraphicsView):
     def drawAllPolygons(self):
         polys = self.findPolygons(self.cv_image)
         self.drawPolygons(polys)
+
+    def drawNumbers(self, nums):
+        pass
 
     def drawPolygons(self, polygons):
         self.removePolygons()
@@ -539,12 +603,6 @@ class MainWindow(QMainWindow):
             partial(self.sdk_view.drawQuads))
         menu_edit.addAction(action_edit_draw_quad)
 
-        action_edit_draw_lines = QAction("Draw Grid Cells", self)
-        action_edit_draw_lines.setShortcut("Ctrl+G")
-        action_edit_draw_lines.triggered.connect(
-            partial(self.sdk_view.drawGridQuads))
-        menu_edit.addAction(action_edit_draw_lines)
-
         action_edit_fc = QAction("Draw Contour", self)
         action_edit_fc.setShortcut("Ctrl+1")
         action_edit_fc.triggered.connect(
@@ -556,6 +614,18 @@ class MainWindow(QMainWindow):
         action_edit_crop.triggered.connect(
             partial(self.onCrop))
         menu_edit.addAction(action_edit_crop)
+
+        action_edit_draw_grids = QAction("Draw Grid Cells", self)
+        action_edit_draw_grids.setShortcut("Ctrl+3")
+        action_edit_draw_grids.triggered.connect(
+            partial(self.sdk_view.drawGridQuads))
+        menu_edit.addAction(action_edit_draw_grids)
+
+        action_edit_draw_nums = QAction("Draw NUmbers", self)
+        action_edit_draw_nums.setShortcut("Ctrl+4")
+        action_edit_draw_nums.triggered.connect(
+            partial(self.sdk_view.drawGridNumbers))
+        menu_edit.addAction(action_edit_draw_nums)
 
         menubar.addMenu(menu_edit)
 
