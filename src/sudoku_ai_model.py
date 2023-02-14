@@ -338,9 +338,8 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
     base_path.mkdir(parents=True, exist_ok=True)
 
     shape = (32, 32)
-    num_classes = 16  # 0..1..A..F, excluding the remaining letters
     data_train = datasets.EMNIST(
-        str(base_path), "balanced", train=True, download=True,
+        str(base_path), "byclass", train=True, download=True,
         transform=transforms.Compose([
             transforms.Resize(shape),
             transforms.RandomHorizontalFlip(1.0),
@@ -349,7 +348,7 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
         ])
     )
     data_test = datasets.EMNIST(
-        str(base_path), "balanced", train=False, download=True,
+        str(base_path), "byclass", train=False, download=True,
         transform=transforms.Compose([
             transforms.Resize(shape),
             transforms.RandomHorizontalFlip(1.0),
@@ -357,9 +356,26 @@ def main(should_train=True, should_test=True, fpath_load=None, fpath_save=None):
             transforms.ToTensor()
         ])
     )
+    # We're only interested in the hexadecimal characters. However, we don't use the balanced
+    # set from EMNIST because if we balance ourselves with our wanted subset, we get more training
+    # data
+    num_classes = 16  # 0..1..A..F, excluding the remaining letters
+    cnt_min = 2 ** 31
+    indices = []
+    for i in range(num_classes):
+        idx = torch.argwhere((data_train.targets == i)).flatten().numpy()
+        indices += [idx]
+        cnt_min = min(cnt_min, len(idx))
+
+    for i in range(num_classes):
+        indices[i] = indices[i][:cnt_min]
+    
+    indices = np.array(indices).flatten()
+    indices.sort()
+
     # We're only interested in the hexadecimal characters
-    data_train = Subset(data_train, torch.argwhere(
-        data_train.targets < num_classes).flatten().numpy())
+    data_train = Subset(data_train, indices)
+    # The testing data doesn't need to be balanced
     data_test = Subset(data_test, torch.argwhere(
         data_test.targets < num_classes).flatten().numpy())
 
