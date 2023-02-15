@@ -1,9 +1,9 @@
 from PyQt5 import QtCore, QtGui
-from PyQt5.QtGui import QFont, QTransform, QPen, QPixmap, QPolygonF, QImage
-from PyQt5.QtCore import QPointF, QRectF, pyqtSlot, QLineF
-from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsItem, QFileDialog, \
+from PyQt5.QtGui import QFont, QPen, QPixmap, QPolygonF, QImage
+from PyQt5.QtCore import QPointF, QRectF
+from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsTextItem, QFileDialog, \
     QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsPolygonItem, QGraphicsPixmapItem, \
-    QMenuBar, QAction, QGraphicsSceneMouseEvent, QGraphicsLineItem
+    QMenuBar, QAction, QGraphicsSceneMouseEvent
 import sys
 from functools import partial
 import numpy as np
@@ -125,6 +125,7 @@ class SudokuView(QGraphicsView):
 
         self.grid_lines = []
         self.polygons = []
+        self.numbers = []
         self.quadrilateral = None
         self.cv_image = None
         self.file_name = ""
@@ -134,7 +135,7 @@ class SudokuView(QGraphicsView):
             numch_out=16, numch_conv=[32, 64],
             transf=transforms.Normalize(0.1307, 0.3081)
         )
-        #self.model.load_state_dict(torch.load(base_path / Path("model_1.pth")))
+        # self.model.load_state_dict(torch.load(base_path / Path("model_1.pth")))
         self.model.load_state_dict(torch.load(base_path / Path("model_0.pth")))
 
         scene = QGraphicsScene()
@@ -178,6 +179,11 @@ class SudokuView(QGraphicsView):
         except:
             pass
 
+    def removeNumbers(self):
+        for cnt in self.numbers:
+            self.scene().removeItem(cnt)
+        self.numbers = []
+
     def removePolygons(self):
         for cnt in self.polygons:
             self.scene().removeItem(cnt)
@@ -202,6 +208,7 @@ class SudokuView(QGraphicsView):
         self.removeQuadrilateral()
         self.removeGridLines()
         self.removePolygons()
+        self.removeNumbers()
         self.drawPixmap(self.pixmap)
 
     def drawPixmap(self, pixmap):
@@ -252,29 +259,31 @@ class SudokuView(QGraphicsView):
             self.removeQuadrilateral()
             self.drawPixmap(pixmap)
 
-    def findContours(self, image):
+    def findContours(self, image, mode=cv2.RETR_LIST, method=cv2.CHAIN_APPROX_NONE):
         simple_thresh = False
         constrast_correction = False
         alpha = 1.3
         beta = 20
-        # convert the image to grayscale format
-        img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        if len(image.shape) == 3:
+            # convert the image to grayscale format
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         if constrast_correction:
-            img_gray = cv2.convertScaleAbs(
-                img_gray, alpha=alpha, beta=beta)
+            image = cv2.convertScaleAbs(
+                image, alpha=alpha, beta=beta)
 
         if simple_thresh:
-            img_blurred = cv2.GaussianBlur(img_gray, (3, 3), 0)
+            img_blurred = cv2.GaussianBlur(image, (3, 3), 0)
             _, img_thresh = cv2.threshold(
                 img_blurred, 120, 255, cv2.THRESH_BINARY)
         else:
-            img_blurred = cv2.GaussianBlur(img_gray, (7, 7), 7)
+            img_blurred = cv2.GaussianBlur(image, (7, 7), 7)
             img_thresh = cv2.adaptiveThreshold(
                 img_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 2)
 
         contours, hierarchy = cv2.findContours(
-            image=img_thresh, mode=cv2.RETR_LIST, method=cv2.CHAIN_APPROX_NONE)
+            image=img_thresh, mode=mode, method=method)
 
         print("Number of contours detected:", len(contours))
 
@@ -386,49 +395,88 @@ class SudokuView(QGraphicsView):
 
         return grid_polys
 
+    def centerImage(self, img):
+        """Center an CV image array based on its positional center
+
+        Args:
+            img: Grayscale, thresheld image CV image
+
+        Returns:
+            Centered image
+        """
+        # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # _, threshed = cv2.threshold(
+        #    gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+
+        cnts, _ = self.findContours(
+            img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        M = cv2.moments(cnts[0])
+        cX = int(round(M["m10"] / M["m00"]))
+        cY = int(round(M["m01"] / M["m00"]))
+        offX, offY = (np.array(img.shape) // 2) - np.array((cX, cY))
+        translation_matrix = np.float32([[1, 0, offX], [0, 1, offY]])
+        return cv2.warpAffine(img, translation_matrix, img.shape)
+
     def findGridNumbers(self, image):
         polys = self.findGridQuads(self.cv_image)
-        # limit the amount of classes for 9x9, 16x16 or 25x25 grids
+        # Limit the amount of classes for 9x9, 16x16 or 25x25 grids,
+        # in order to make better guesses
         if len(polys) == 81:
-            class_range = slice(1,10,1)
+            class_range = slice(1, 10, 1)
         elif len(polys) == 256:
-            class_range = slice(0,15,1)
+            class_range = slice(0, 15, 1)
         elif len(polys) == 625:
-            class_range = slice(1,25,1)
+            class_range = slice(1, 25, 1)
         else:
-            class_range = slice(0,len(polys),1)
+            # no limit
+            class_range = slice(0, len(polys), 1)
         # convert the image to grayscale format
         img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         self.model.eval()
         numbers = {}
         with torch.inference_mode():
             for poly in polys:
-                tl_x, tl_y = poly[0]
-                tr_x, tr_y = poly[1]
-                br_x, br_y = poly[2]
-                bl_x, bl_y = poly[3]
-                w = tr_x - tl_x
-                h = bl_y - tl_y
-                cx = tl_x + w / 2.
-                cy = tl_y + h / 2.
+                (tl_x, tl_y), (tr_x, tr_y), (br_x, br_y), (bl_x, bl_y) = poly
                 crop_img = img_gray[int(tl_y):int(bl_y), int(tl_x):int(tr_x)]
+
                 crop_img = cv2.resize(crop_img, self.model.shape_in)
-                #crop_img = cv2.GaussianBlur(crop_img,(5,5),0)
+                # crop_img = cv2.GaussianBlur(crop_img,(5,5),0)
                 crop_img = cv2.threshold(crop_img, 0, 255,
                                          cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
                 crop_img = clear_border(crop_img)
-                density = crop_img.sum() / np.prod(self.model.shape_in) / 255.
-                print(f"Density = {density * 100}%")
-                if density > 0.05:
-                    x = crop_img.astype(np.float32) / 255.
-                    x = np.array([[x]])
-                    res = self.model(torch.from_numpy(x))
-                    res = res[0][class_range]
-                    num = res.argmax().item() + class_range.start
-                    print(f"Guessed number = {num}")
-                    cv2.imshow("Cell Thresh", crop_img)
-                    cv2.waitKey(0)
-                    numbers[(cx, cy)] = num
+                cnts, _ = self.findContours(crop_img, cv2.RETR_EXTERNAL,
+                                            cv2.CHAIN_APPROX_SIMPLE)
+                if len(cnts) > 0:
+                    # We mask the image contout by contour and check which one yiedls the more dense
+                    # result. This will represent the "better" masked out image
+                    max_density = 0.
+                    x = crop_img.copy()  # this is the potential input for the model further on
+                    for cnt in cnts:
+                        crop_img_copy = crop_img.copy()
+                        # mask everything that is outside the main contour (potentially the digit)
+                        mask = np.zeros(crop_img.shape, dtype=np.uint8)
+                        cv2.drawContours(mask, [cnt], -1, 255, -1)
+                        crop_img_copy = cv2.bitwise_and(
+                            crop_img_copy, crop_img_copy, mask=mask)
+                        density = crop_img_copy.sum()
+                        if density > max_density:
+                            max_density = density
+                            x = crop_img_copy
+
+                    density = max_density / np.prod(self.model.shape_in) / 255.
+                    if density > 0.025:
+                        # Shift the image to its positional center
+                        # TODO: so far it didn't help much
+                        # x = self.shiftToCenter(x)
+                        x = x.astype(np.float32) / 255.
+                        x = np.array([[x]])
+                        res = self.model(torch.from_numpy(x))
+                        res = res[0][class_range]
+                        num = res.argmax().item() + class_range.start
+                        # print(f"Guessed number = {num}")
+                        # cv2.imshow("Cell Thresh", crop_img_2)
+                        # cv2.waitKey(0)
+                        numbers[tuple(poly)] = num
         return numbers
 
     def linesSingleOut(self, lines, theta_margin=3.*(np.pi / 180.), rho_margin=10.):
@@ -484,8 +532,22 @@ class SudokuView(QGraphicsView):
         polys = self.findPolygons(self.cv_image)
         self.drawPolygons(polys)
 
-    def drawNumbers(self, nums):
-        pass
+    def drawNumbers(self, nums: dict):
+        self.removeNumbers()
+        for rect, num in nums.items():
+            ti = QGraphicsTextItem(str(num))
+            (tl_x, tl_y), (tr_x, tr_y), (br_x, br_y), (bl_x, bl_y) = rect
+            w = tr_x - tl_x
+            h = bl_y - tl_y
+            cx = tl_x + w / 2.
+            cy = tl_y + h / 2.
+            # size is dependent on the are of the grid
+            font = QFont("Courrier New", int(round((w + h) / 8.)))
+            ti.setDefaultTextColor(QtCore.Qt.green)
+            ti.setFont(font)
+            ti.setPos(cx, cy)
+            self.scene().addItem(ti)
+            self.numbers += [ti]
 
     def drawPolygons(self, polygons):
         self.removePolygons()
